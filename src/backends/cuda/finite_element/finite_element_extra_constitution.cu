@@ -114,6 +114,11 @@ muda::CBufferView<Vector3> FiniteElementExtraConstitution::BaseInfo::xs() const 
     return m_impl->finite_element_method->xs();
 }
 
+muda::CBufferView<Vector3> FiniteElementExtraConstitution::BaseInfo::x_prevs() const noexcept
+{
+    return m_impl->finite_element_method->x_prevs();
+}
+
 muda::CBufferView<Vector3> FiniteElementExtraConstitution::BaseInfo::x_bars() const noexcept
 {
     return m_impl->finite_element_method->x_bars();

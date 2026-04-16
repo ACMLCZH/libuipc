@@ -71,6 +71,7 @@ class FiniteElementExtraConstitution : public SimSystem
         Float dt() const noexcept;
 
         muda::CBufferView<Vector3> xs() const noexcept;
+        muda::CBufferView<Vector3> x_prevs() const noexcept;
         muda::CBufferView<Vector3> x_bars() const noexcept;
         muda::CBufferView<IndexT>  is_fixed() const noexcept;
         muda::CBufferView<Float>   thicknesses() const noexcept;

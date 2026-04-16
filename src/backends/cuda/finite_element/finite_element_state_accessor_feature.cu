@@ -31,6 +31,7 @@ SizeT FiniteElementStateAccessorFeatureOverrider::get_vertex_count()
 
 void FiniteElementStateAccessorFeatureOverrider::do_copy_from(const geometry::SimplicialComplex& state_geo)
 {
+    spdlog::info("[do_copy_from] called, writing xs + x_prevs + vs");
     auto v_offset_attr = state_geo.meta().find<IndexT>(builtin::backend_fem_vertex_offset);
     UIPC_ASSERT(v_offset_attr, "Cannot find `backend_fem_vertex_offset` on State Geometry, why can it happen?");
     auto v_offset = v_offset_attr->view()[0];
@@ -44,6 +45,14 @@ void FiniteElementStateAccessorFeatureOverrider::do_copy_from(const geometry::Si
         auto pos_view  = pos->view();
         auto x_subview = m_fem.m_impl.xs.view(v_offset, v_count);
         x_subview.copy_from(pos_view.data());
+
+        // Also update x_prevs to match teleported positions.
+        // Without this, the BDF1 time integrator computes
+        // v = (xs_solved - x_prevs_stale) / dt after the first step,
+        // producing large velocities that cause the step-2 predictor
+        // to extrapolate into penetrating/degenerate configurations (NaN).
+        auto x_prev_subview = m_fem.m_impl.x_prevs.view(v_offset, v_count);
+        x_prev_subview.copy_from(pos_view.data());
     }
 
     // 2. Velocity
