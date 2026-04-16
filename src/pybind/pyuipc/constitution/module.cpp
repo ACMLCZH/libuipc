@@ -38,6 +38,7 @@
 #include <pyuipc/constitution/affine_body_external_force.h>
 #include <pyuipc/constitution/affine_body_prismatic_joint_external_force.h>
 #include <pyuipc/constitution/affine_body_revolute_joint_external_force.h>
+#include <pyuipc/constitution/finite_element_external_force.h>
 #include <pyuipc/constitution/external_articulation_constraint.h>
 
 namespace pyuipc::constitution
@@ -89,6 +90,9 @@ PyModule::PyModule(py::module& m)
     PySoftVertexStitch{m};
     PySoftVertexEdgeStitch{m};
     PySoftVertexTriangleStitch{m};
+
+    // Finite Element External Force
+    PyFiniteElementExternalForce{m};
 
     // Constraints
     PySoftPositionConstraint{m};

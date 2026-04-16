@@ -34,20 +34,20 @@ void AffineBodyDrivingRevoluteJoint::apply_to(geometry::SimplicialComplex& sc, F
 void AffineBodyDrivingRevoluteJoint::apply_to(geometry::SimplicialComplex& sc,
                                               span<Float> strength_ratio)
 {
-    UIPC_ASSERT(sc.dim() == 1,
+    UIPC_ASSERT_THROW(sc.dim() == 1,
                 "AffineBodyDrivingRevoluteJoint can only be applied to 1D simplicial complex (linemesh), "
                 "but got {}D",
                 sc.dim());
 
     auto size = sc.edges().size();
-    UIPC_ASSERT(strength_ratio.size() == size,
+    UIPC_ASSERT_THROW(strength_ratio.size() == size,
                 "Strength ratio size mismatch: expected {}, got {}",
                 size,
                 strength_ratio.size());
     Base::apply_to(sc);
 
     auto uid = sc.meta().find<U64>(builtin::constitution_uid);
-    UIPC_ASSERT(uid && uid->view()[0] == 18,  // UID of AffineBodyRevoluteJoint
+    UIPC_ASSERT_THROW(uid && uid->view()[0] == 18,  // UID of AffineBodyRevoluteJoint
                 "Simplicial complex does not have constitution uid. "
                 "Please apply an AffineBodyRevoluteJoint before applying AffineBodyDrivingRevoluteJoint");
 
@@ -82,22 +82,6 @@ void AffineBodyDrivingRevoluteJoint::apply_to(geometry::SimplicialComplex& sc,
     }
     auto aim_angle_view = view(*aim_angle);
     std::ranges::fill(aim_angle_view, 0.0);
-
-    auto angle = sc.edges().find<Float>("angle");
-    if(!angle)
-    {
-        angle = sc.edges().create<Float>("angle", 0.0);
-    }
-    auto angle_view = view(*angle);
-    std::ranges::fill(angle_view, 0.0);
-
-    auto init_angle = sc.edges().find<Float>("init_angle");
-    if(!init_angle)
-    {
-        init_angle = sc.edges().create<Float>("init_angle");
-    }
-    auto init_angle_view = view(*init_angle);
-    std::ranges::fill(init_angle_view, 0.0);
 }
 
 

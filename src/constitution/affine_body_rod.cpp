@@ -15,7 +15,7 @@ void AffineBodyRod::apply_to(geometry::SimplicialComplex& sc,
                              Float                        mass_density,
                              Float                        thickness) const
 {
-    UIPC_ASSERT(sc.dim() == 1,
+    UIPC_ASSERT_THROW(sc.dim() == 1,
                 "AffineBodyRod requires a 1D simplicial complex (edge mesh), got dim={}.",
                 sc.dim());
 
@@ -35,7 +35,7 @@ void AffineBodyRod::apply_to(geometry::SimplicialComplex& sc,
 
     auto attr_thickness = sc.vertices().find<Float>(builtin::thickness);
     if(!attr_thickness)
-        attr_thickness = sc.vertices().create<Float>(builtin::thickness, thickness);
+        attr_thickness = sc.vertices().create<Float>(builtin::thickness, 0.0);
     auto thickness_view = geometry::view(*attr_thickness);
     std::ranges::fill(thickness_view, thickness);
 }
