@@ -54,10 +54,8 @@ void FiniteElementConstitution::apply_to(geometry::SimplicialComplex& sc,
     geometry::compute_vertex_volume(sc);
 
     auto meta_mass = sc.meta().find<Float>(builtin::mass_density);
-
     if(!meta_mass)
-        meta_mass = sc.meta().create<Float>(builtin::mass_density, mass_density);
-    else
-        geometry::view(*meta_mass).front() = mass_density;
+        meta_mass = sc.meta().create<Float>(builtin::mass_density, 0.0);
+    geometry::view(*meta_mass).front() = mass_density;
 }
 }  // namespace uipc::constitution

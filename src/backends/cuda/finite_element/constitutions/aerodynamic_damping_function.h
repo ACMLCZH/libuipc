@@ -70,7 +70,7 @@ inline UIPC_GENERIC void dEdx(Vector<Float, 9>& G,
     Float alpha = u.dot(c);
     Float k = coeff / 18.0;
 
-    // dc/dx0 = [x2-x1]_x,  dc/dx1 = -[x2-x0]_x = -[b]_x,  dc/dx2 = [x1-x0]_x = [a]_x
+    // dc/dx0 = [x2-x1]_x,  dc/dx1 = -[b]_x,  dc/dx2 = [a]_x
     Matrix3x3 dc_dx0 = skew(x2 - x1);
     Matrix3x3 dc_dx1 = -skew(b);
     Matrix3x3 dc_dx2 = skew(a);
