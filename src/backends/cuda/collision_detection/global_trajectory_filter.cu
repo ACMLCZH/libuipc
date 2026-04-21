@@ -155,7 +155,10 @@ muda::BufferView<IndexT> GlobalTrajectoryFilter::LabelActiveVerticesInfo::vert_i
 
 void GlobalTrajectoryFilter::do_apply_recover(RecoverInfo& info)
 {
-    // Friction candidates are already recovered, no need to discard them.
+    // Clear stale friction candidates from pre-recover state.
+    // Without this, friction forces from the old contact configuration persist
+    // after recover, causing the newton solver to diverge.
+    clear_friction_candidates();
     m_impl.should_discard_friction_candidates = false;
 }
 }  // namespace uipc::backend::cuda
