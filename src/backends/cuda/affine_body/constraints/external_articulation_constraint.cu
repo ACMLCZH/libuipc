@@ -1018,6 +1018,9 @@ class ExternalArticulationConstraint final : public InterAffineBodyConstraint
     }
 
     BufferDump dump_delta_theta;
+    BufferDump dump_delta_theta_tilde;
+    BufferDump dump_ref_q_prevs;
+    BufferDump dump_mass;
 
     bool do_dump(DumpInfo& info) override
     {
@@ -1025,7 +1028,14 @@ class ExternalArticulationConstraint final : public InterAffineBodyConstraint
         auto frame = info.frame();
 
         return dump_delta_theta.dump(fmt::format("{}delta_theta.{}", path, frame),
-                                     joint_id_to_delta_theta);
+                                     joint_id_to_delta_theta)
+               && dump_delta_theta_tilde.dump(
+                   fmt::format("{}delta_theta_tilde.{}", path, frame),
+                   joint_id_to_delta_theta_tilde)
+               && dump_ref_q_prevs.dump(
+                   fmt::format("{}ref_q_prevs.{}", path, frame), ref_q_prevs)
+               && dump_mass.dump(
+                   fmt::format("{}mass.{}", path, frame), joint_joint_id_to_mass);
     }
 
     bool do_try_recover(RecoverInfo& info) override
@@ -1033,17 +1043,28 @@ class ExternalArticulationConstraint final : public InterAffineBodyConstraint
         auto path  = info.dump_path(UIPC_RELATIVE_SOURCE_FILE);
         auto frame = info.frame();
 
-        return dump_delta_theta.load(fmt::format("{}delta_theta.{}", path, frame));
+        return dump_delta_theta.load(fmt::format("{}delta_theta.{}", path, frame))
+               && dump_delta_theta_tilde.load(
+                   fmt::format("{}delta_theta_tilde.{}", path, frame))
+               && dump_ref_q_prevs.load(
+                   fmt::format("{}ref_q_prevs.{}", path, frame))
+               && dump_mass.load(fmt::format("{}mass.{}", path, frame));
     }
 
     void do_apply_recover(RecoverInfo& info) override
     {
         dump_delta_theta.apply_to(joint_id_to_delta_theta);
+        dump_delta_theta_tilde.apply_to(joint_id_to_delta_theta_tilde);
+        dump_ref_q_prevs.apply_to(ref_q_prevs);
+        dump_mass.apply_to(joint_joint_id_to_mass);
     }
 
     void do_clear_recover(RecoverInfo& info) override
     {
         dump_delta_theta.clean_up();
+        dump_delta_theta_tilde.clean_up();
+        dump_ref_q_prevs.clean_up();
+        dump_mass.clean_up();
     }
 };
 
