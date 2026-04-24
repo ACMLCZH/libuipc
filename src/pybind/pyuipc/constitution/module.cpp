@@ -20,6 +20,8 @@
 #include <pyuipc/constitution/discrete_shell_bending.h>
 #include <pyuipc/constitution/strain_plastic_discrete_shell_bending.h>
 #include <pyuipc/constitution/stress_plastic_discrete_shell_bending.h>
+#include <pyuipc/constitution/strain_plastic_discrete_shell_bending_modifier.h>
+#include <pyuipc/constitution/stress_plastic_discrete_shell_bending_modifier.h>
 #include <pyuipc/constitution/aerodynamic_damping.h>
 #include <pyuipc/constitution/arap.h>
 #include <pyuipc/constitution/inter_affine_body_constitution.h>
@@ -83,6 +85,8 @@ PyModule::PyModule(py::module& m)
     PyDiscreteShellBending{m};
     PyStrainPlasticDiscreteShellBending{m};
     PyStressPlasticDiscreteShellBending{m};
+    PyStrainPlasticDiscreteShellBendingModifier{m};
+    PyStressPlasticDiscreteShellBendingModifier{m};
     PyAerodynamicDamping{m};
 
     // Inter Primitive Constitutions

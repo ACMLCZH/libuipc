@@ -1,5 +1,6 @@
 #include <finite_element/finite_element_extra_constitution.h>
 #include <finite_element/finite_element_method.h>
+#include <finite_element/finite_element_constraint.h>
 #include <time_integrator/time_integrator.h>
 #include <uipc/builtin/attribute_name.h>
 #include <finite_element/constitutions/strain_plastic_discrete_shell_bending_function.h>
@@ -432,4 +433,199 @@ class StrainPlasticDiscreteShellBendingTimeIntegrator final : public TimeIntegra
     }
 };
 REGISTER_SIM_SYSTEM(StrainPlasticDiscreteShellBendingTimeIntegrator);
+
+// ---------------------------------------------------------------------------
+// StrainPlasticDiscreteShellBendingModifier
+//
+// A zero-energy FiniteElementConstraint.  Each edge independently controls
+// its own stencil via two per-edge attributes on the SimplicialComplex:
+//
+//   "cancel_plastic"   (IndexT, default 0)
+//       Set to 1 to freeze this edge's stencil: yield_threshold -> 1e30,
+//       theta_bar reset to initial rest angle.
+//
+//   "target_bending_stiffness" (Float, default 0)
+//       If > 0, override bending stiffness for this stencil after freeze.
+// ---------------------------------------------------------------------------
+class StrainPlasticDiscreteShellBendingModifier final : public FiniteElementConstraint
+{
+    static constexpr U64 ModifierUID = 34;
+
+    SimSystemSlot<StrainPlasticDiscreteShellBending> m_pdsb;
+
+    struct GeoInfo
+    {
+        IndexT vertex_offset = 0;
+        IndexT vertex_count  = 0;
+        IndexT geo_slot_idx  = 0;
+    };
+    vector<GeoInfo> m_geo_infos;
+    vector<IndexT>  m_stencil_geo;    // stencil i → m_geo_infos index
+    vector<IndexT>  m_stencil_edge;   // stencil i → local edge index in its geometry
+    vector<bool>    m_stencil_frozen; // per-stencil frozen state
+
+    muda::DeviceBuffer<IndexT> d_freeze_ids;
+    muda::DeviceBuffer<Float>  d_new_kappas;
+    muda::DeviceBuffer<Float>  d_initial_theta_bars;
+
+  public:
+    using FiniteElementConstraint::FiniteElementConstraint;
+    U64 get_uid() const noexcept override { return ModifierUID; }
+
+    void do_build(BuildInfo&) override
+    {
+        m_pdsb = require<StrainPlasticDiscreteShellBending>();
+    }
+
+    void do_init(FiniteElementAnimator::FilteredInfo& info) override
+    {
+        auto geo_infos = info.anim_geo_infos();
+        auto geo_slots = world().scene().geometries();
+
+        m_geo_infos.clear();
+        m_geo_infos.reserve(geo_infos.size());
+
+        // Build per-geometry edge maps: sorted local edge pair → local edge index
+        vector<unordered_map<Vector2i, IndexT, Vector2iHash>> edge_maps(geo_infos.size());
+
+        for(SizeT g = 0; g < geo_infos.size(); ++g)
+        {
+            auto& slot = *geo_slots[geo_infos[g].geo_slot_index];
+            auto& sc   = dynamic_cast<geometry::SimplicialComplex&>(slot.geometry());
+            auto  edges = sc.edges().topo().view();
+
+            m_geo_infos.push_back(GeoInfo{.vertex_offset = (IndexT)geo_infos[g].vertex_offset,
+                                          .vertex_count  = (IndexT)geo_infos[g].vertex_count,
+                                          .geo_slot_idx  = geo_infos[g].geo_slot_index});
+
+            for(IndexT e = 0; e < (IndexT)edges.size(); ++e)
+            {
+                Vector2i ev = {edges[e][0], edges[e][1]};
+                if(ev[0] > ev[1]) std::swap(ev[0], ev[1]);
+                edge_maps[g][ev] = e;
+            }
+        }
+
+        // Build stencil → (geo, local edge) mappings
+        const auto& h_stencils = m_pdsb->h_stencils;
+        m_stencil_geo.assign(h_stencils.size(), IndexT(-1));
+        m_stencil_edge.assign(h_stencils.size(), IndexT(-1));
+        m_stencil_frozen.assign(h_stencils.size(), false);
+
+        for(SizeT i = 0; i < h_stencils.size(); ++i)
+        {
+            IndexT v = h_stencils[i][1];  // edge endpoint → identifies geometry
+            for(IndexT g = 0; g < (IndexT)m_geo_infos.size(); ++g)
+            {
+                IndexT v0 = m_geo_infos[g].vertex_offset;
+                IndexT v1 = v0 + m_geo_infos[g].vertex_count;
+                if(v < v0 || v >= v1)
+                    continue;
+
+                m_stencil_geo[i] = g;
+
+                IndexT lv1 = h_stencils[i][1] - v0;
+                IndexT lv2 = h_stencils[i][2] - v0;
+                Vector2i ev = {lv1, lv2};
+                if(ev[0] > ev[1]) std::swap(ev[0], ev[1]);
+
+                auto it = edge_maps[g].find(ev);
+                if(it != edge_maps[g].end())
+                    m_stencil_edge[i] = it->second;
+
+                break;
+            }
+        }
+
+        // Snapshot initial theta_bars from the plastic constitution
+        d_initial_theta_bars.resize(m_pdsb->h_theta_bars.size());
+        d_initial_theta_bars.view().copy_from(m_pdsb->h_theta_bars.data());
+    }
+
+    void do_step(FiniteElementAnimator::FilteredInfo& info) override
+    {
+        auto geo_slots = world().scene().geometries();
+
+        // Pre-fetch per-geometry edge attribute views
+        struct GeoAttrs
+        {
+            span<const IndexT> freeze;
+            span<const Float>  target;
+        };
+        vector<GeoAttrs> geo_attrs(m_geo_infos.size());
+        for(SizeT g = 0; g < m_geo_infos.size(); ++g)
+        {
+            auto& slot = *geo_slots[m_geo_infos[g].geo_slot_idx];
+            auto& sc   = dynamic_cast<geometry::SimplicialComplex&>(slot.geometry());
+
+            auto fa = sc.edges().find<IndexT>("cancel_plastic");
+            auto ta = sc.edges().find<Float>("target_bending_stiffness");
+            if(fa) geo_attrs[g].freeze = fa->view();
+            if(ta) geo_attrs[g].target = ta->view();
+        }
+
+        vector<IndexT> freeze_ids;
+        vector<Float>  new_kappas;
+
+        for(SizeT i = 0; i < m_stencil_geo.size(); ++i)
+        {
+            if(m_stencil_frozen[i]) continue;
+
+            IndexT g = m_stencil_geo[i];
+            if(g < 0) continue;
+
+            auto& ga        = geo_attrs[g];
+            IndexT edge_idx = m_stencil_edge[i];
+            if(ga.freeze.empty() || edge_idx < 0 || edge_idx >= (IndexT)ga.freeze.size())
+                continue;
+
+            if(ga.freeze[edge_idx] == IndexT(0)) continue;
+
+            m_stencil_frozen[i] = true;
+            freeze_ids.push_back((IndexT)i);
+
+            Float kappa = 0.0f;
+            if(!ga.target.empty() && edge_idx < (IndexT)ga.target.size())
+                kappa = ga.target[edge_idx];
+            new_kappas.push_back(kappa);
+        }
+
+        if(freeze_ids.empty()) return;
+
+        using namespace muda;
+
+        d_freeze_ids.resize(freeze_ids.size());
+        d_freeze_ids.view().copy_from(freeze_ids.data());
+        d_new_kappas.resize(new_kappas.size());
+        d_new_kappas.view().copy_from(new_kappas.data());
+
+        ParallelFor()
+            .file_line(__FILE__, __LINE__)
+            .apply(d_freeze_ids.size(),
+                   [ids      = d_freeze_ids.cviewer().name("freeze_ids"),
+                    kappas   = d_new_kappas.cviewer().name("new_kappas"),
+                    ys       = m_pdsb->yield_thresholds.viewer().name("yield_thresholds"),
+                    bs       = m_pdsb->bending_stiffnesses.viewer().name("bending_stiffnesses"),
+                    tbs      = m_pdsb->theta_bars.viewer().name("theta_bars"),
+                    init_tbs = d_initial_theta_bars.cviewer().name("initial_theta_bars")]
+                   __device__(int i) mutable
+                   {
+                       auto  sid   = ids(i);
+                       ys(sid)     = static_cast<Float>(1e30);
+                       tbs(sid)    = init_tbs(sid);
+                       Float kappa = kappas(i);
+                       if(kappa > Float(0)) bs(sid) = kappa;
+                   });
+    }
+
+    void do_report_extent(FiniteElementAnimator::ReportExtentInfo& info) override
+    {
+        info.energy_count(0);
+        info.gradient_count(0);
+        if(!info.gradient_only()) info.hessian_count(0);
+    }
+    void do_compute_energy(FiniteElementAnimator::ComputeEnergyInfo&) override {}
+    void do_compute_gradient_hessian(FiniteElementAnimator::ComputeGradientHessianInfo&) override {}
+};
+REGISTER_SIM_SYSTEM(StrainPlasticDiscreteShellBendingModifier);
 }  // namespace uipc::backend::cuda
