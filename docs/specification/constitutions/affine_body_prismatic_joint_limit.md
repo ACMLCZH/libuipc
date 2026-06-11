@@ -6,13 +6,24 @@
 
 ## Energy
 
-The limit adds an energy $E(x)$ where $x$ is the scalar joint coordinate (its exact meaning is given in [Meaning of $x$](#meaning-of-x)). The effective bounds are computed from the user-specified limits and the initial distance:
+`limit/lower` and `limit/upper` are **absolute bounds on the reported `distance` attribute** (i.e. $d_{\text{current}}$ as defined by the base [Prismatic Joint](./affine_body_prismatic_joint.md#distance-state)). The user can set them directly against the value they read back from `distance`.
+
+Internally the penalty is evaluated on the scalar coordinate $x$, whose
+meaning is the raw joint coordinate $d(\mathbf{q})$ defined by the base
+[Prismatic Joint](./affine_body_prismatic_joint.md#distance-state). The
+reported distance is
 
 $$
-l = l_{\text{user}} + d_0, \quad u = u_{\text{user}} + d_0,
+d_{\text{current}} = x + d_0,
 $$
 
-where $l_{\text{user}},u_{\text{user}}$ are `limit/lower`, `limit/upper` and $d_0$ is `init_distance`. Let $s$ be `limit/strength`.
+so the effective bounds on $x$ are shifted by $-d_0$:
+
+$$
+l = l_{\text{user}} - d_0, \quad u = u_{\text{user}} - d_0,
+$$
+
+where $l_{\text{user}}, u_{\text{user}}$ are `limit/lower`, `limit/upper` and $d_0$ is `init_distance` from the base joint. Algebraically this is equivalent to enforcing $l_{\text{user}} \le d_{\text{current}} \le u_{\text{user}}$. Let $s$ be `limit/strength`.
 
 For normal range width ($u>l$):
 
@@ -43,25 +54,25 @@ Boundary points are treated as in-range.
 
 ## Meaning of $x$
 
-The prismatic coordinate is evaluated in incremental form:
+The coordinate $x$ used by the limit is the same raw joint coordinate
+$d(\mathbf{q})$ as the base
+[Prismatic Joint](./affine_body_prismatic_joint.md#distance-state):
 
 $$
-x=\theta^t+\delta,
+x = d(\mathbf{q}) =
+\frac{
+(\mathbf{c}_j(\mathbf{q})-\mathbf{c}_i(\mathbf{q}))
+\cdot
+(\hat{\mathbf{t}}_i(\mathbf{q})+\hat{\mathbf{t}}_j(\mathbf{q}))
+}{2}.
 $$
 
-$$
-\theta^t=\Delta\Theta(\mathbf{q}^{t},\mathbf{q}_{ref}), \quad
-\delta=\Delta\Theta(\mathbf{q},\mathbf{q}^{t}).
-$$
-
-Here:
-
-- $\mathbf{q}$ is the current affine-body DOF.
-- $\mathbf{q}^{t}$ is the previous-time-step DOF.
-- $\mathbf{q}_{ref}$ is the reference DOF captured at initialization.
-- $\theta^t$ is the accumulated prismatic coordinate from the previous step.
-
-Note that $\mathbf{q}$ is the concatenation of the DOF of the two affine bodies connected by the prismatic joint.
+Here $\mathbf{c}_i(\mathbf{q})$ and $\mathbf{c}_j(\mathbf{q})$ are the current
+world-space joint anchor positions on the two affine bodies, and
+$\hat{\mathbf{t}}_i(\mathbf{q})$, $\hat{\mathbf{t}}_j(\mathbf{q})$ are the
+current world-space prismatic axes. Note that $\mathbf{q}$ is the
+concatenation of the DOF of the two affine bodies connected by the prismatic
+joint.
 
 $$
 \mathbf{q} =
@@ -75,9 +86,10 @@ The [Prismatic Joint](./affine_body_prismatic_joint.md) geometry is represented 
 
 ![Prismatic joint axis $\hat{\mathbf{t}}$](./media/external_articulation_prismatic_constraint_fig1.drawio.svg)
 
-- $x=0$: current relative prismatic coordinate equals the reference coordinate.
-- $x>0$: link $j$ translates relative to link $i$ along $+\hat{\mathbf{t}}$.
-- $x<0$: link $j$ translates relative to link $i$ along $-\hat{\mathbf{t}}$.
+- $x=0$: the two joint anchors have zero signed separation along the averaged
+  prismatic axis.
+- $x>0$: link $j$ is ahead of link $i$ along $+\hat{\mathbf{t}}$.
+- $x<0$: link $j$ is behind link $i$ along $+\hat{\mathbf{t}}$.
 
 Equivalent symmetric coordinate (same convention as [External Articulation Constraint](./external_articulation_constraint.md)):
 
@@ -101,7 +113,8 @@ The host geometry is **edge-based** (one edge per joint), with the same linking 
 
 On **edges** (in addition to the base joint attributes above):
 
-- `limit/lower`: $l_{\text{user}}$ — relative lower bound (default `0.0`)
-- `limit/upper`: $u_{\text{user}}$ — relative upper bound (default `0.0`)
+- `limit/lower`: $l_{\text{user}}$ — absolute lower bound on the reported `distance` (default `0.0`)
+- `limit/upper`: $u_{\text{user}}$ — absolute upper bound on the reported `distance` (default `0.0`)
 - `limit/strength`: $s$ — penalty strength (default `1.0`)
-- `init_distance`: $d_0$ — initial prismatic distance offset (default `0.0`). Added to `limit/lower` and `limit/upper` to obtain the effective bounds $l$ and $u$ used in the energy
+
+The limit also consumes the base-joint attribute `init_distance` ($d_0$, default `0.0`); it is **subtracted** from `limit/lower`/`limit/upper` to form the effective bounds $l$/$u$ used on $x=d(\mathbf{q})$. Equivalently, the penalty enforces the user-facing reported distance $d_{\text{current}} = x + d_0$.
